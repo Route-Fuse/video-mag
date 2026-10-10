@@ -1,50 +1,109 @@
-# RouteFuse
+# Video Amplification
 
-RouteFuse is a web-based carpool matching platform that helps users find people travelling along similar routes.
+Local Fedora KDE prototype: Galaxy S24 rear camera → scrcpy over USB/ADB →
+V4L2 loopback → FFmpeg → causal Eulerian video magnification → browser previews.
+Choose **Color amp** or **Motion amp**, adjust added gain and a temporal frequency
+band, and see original and amplified video side by side. A synthetic source
+provides independent 1.2 Hz color and subpixel motion examples without a phone.
 
-Users enter their source, destination, and preferred travel time, and the system identifies compatible travellers based on route similarity and other travel factors.
+## Run
 
-The project will use Machine Learning to improve route compatibility matching and make daily carpooling easier.
-
-## Status
-
-Work in progress.
-
-## Project Structure
-
-```text
-RouteFuse/
-├── frontend/   # React + Vite UI
-├── backend/    # FastAPI service
-└── ml/         # Future ML component notes
-```
-
-## Development Setup
-
-### 1) Frontend
+Dependencies are installed locally for this workspace. Start both servers:
 
 ```bash
+./run.sh
+```
+
+Open http://127.0.0.1:5173. Stop with Ctrl+C. Logs are in `.runtime/`.
+The servers bind to localhost only.
+
+For a fresh checkout (Python 3.12 or newer, Node compatible with Vite 8):
+
+```bash
+python -m venv backend/.venv
+backend/.venv/bin/python -m pip install -r backend/requirements.txt
 cd frontend
-npm install
-npm run dev
+npm ci
+cd ..
+./run.sh
 ```
 
-Frontend runs on: `http://localhost:5173`
+The phone source also requires `adb`, `scrcpy` with camera/V4L2 support,
+`ffmpeg`, `v4l2-ctl`, `fuser`, and an existing V4L2 loopback device. Fedora
+packages include `android-tools`, `scrcpy`, `v4l-utils`, and `psmisc`.
+V4L2 loopback installation/loading depends on the host kernel; the app does not
+install, unload or reconfigure kernel modules. On the development laptop,
+`/dev/video0` is an existing OBS Virtual Camera loopback. It must be unused;
+the app refuses to take a device with existing users.
 
-### 2) Backend
+## Connect the S24
+
+1. Enable Developer options and USB debugging on the phone.
+2. Connect a USB data cable, unlock the phone, accept its debugging prompt.
+3. Close any phone app already using the camera.
+4. Choose **S24 · USB**, click **Refresh**, then **Find lenses**.
+5. Select the main rear wide camera from Android's listed camera IDs. Automatic
+   rear selection is available, but does not guarantee the specific main lens.
+6. Select the unused virtual camera and click **Start capture**.
+7. Choose **Color amp** or **Motion amp**. Change gain/band and click
+   **Apply settings**. Mode changes apply immediately and reset filter state.
+
+Capture requests 30 FPS, H.264 at 20 Mbps and a camera size up to 1280 pixels.
+Processing uses 640×360 with aspect-preserving letterboxing. Startup failure,
+USB disconnection and decoder failure appear in the interface and capture log.
+Stop terminates only the scrcpy/FFmpeg children started by this app.
+
+## Algorithms and limits
+
+- **Color:** Gaussian-pyramid reduction, causal second-order Butterworth
+  band-pass, upsampled band signal added to the original BGR channels.
+- **Motion:** Laplacian-pyramid Eulerian baseline; band-pass intermediate
+  spatial bands with gain attenuated at finer scales. Finest detail and coarse
+  residual remain unchanged. This is **not phase-based motion magnification**
+  and does not reproduce all scale/gain rules of the original EVM implementation.
+- Gain is the **added filtered-signal gain**, not a guaranteed physical motion
+  multiplier. Gain zero returns the original exactly before preview encoding.
+- Each spatial filter has persistent causal state; state resets on settings
+  changes and arrival gaps over 250 ms. Allow several seconds to settle.
+- Frequency settings require `0 < low < high < 15 Hz` for the 30 FPS target.
+- The previews are JPEG/MJPEG representations of processed frames. No recording
+  export, ROI editor, physiological measurements or RAW capture is implemented.
+- V4L2/FFmpeg ingestion currently uses local frame-arrival timing rather than
+  preserved sensor timestamps. The filter assumes uniform 30 FPS. Low delivery
+  rates, duplicated frames and camera processing can invalidate frequency
+  interpretation. The UI reports processing rate and clipping; this is a
+  qualitative preview, not a validated scientific instrument.
+- Mount the phone steadily, use stable illumination and keep gain conservative.
+  scrcpy does not expose manual exposure/focus/white-balance locking here.
+- Memory is bounded by current frames, pyramid/filter state and OS pipe buffers;
+  frames are not accumulated for an entire recording.
+
+Research foundation: [Wu et al., Eulerian Video Magnification, 2012](https://people.csail.mit.edu/mrub/evm/).
+Capture reference: [scrcpy camera](https://github.com/Genymobile/scrcpy/blob/master/doc/camera.md)
+and [V4L2 output](https://github.com/Genymobile/scrcpy/blob/master/doc/v4l2.md).
+
+## Verify
 
 ```bash
+backend/.venv/bin/python -m pip install -r backend/requirements-dev.txt
 cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q
+cd ../frontend
+npm run build
+npm run lint
 ```
 
-Backend runs on: `http://127.0.0.1:8000`
+Tests cover zero-gain identity, static-scene stability, passband/stopband
+response, known color amplification, subpixel-motion response, settings
+validation, and demo lifecycle. These checks do not establish actual S24 camera
+quality, sensor timing, or measurement accuracy.
 
-### API Endpoints (phase 1)
+## Development verification (10 October 2026)
 
-- `GET /` → `{"message": "MergeMiles API is running"}`
-- `GET /health` → `{"status": "ok"}`
-- `POST /api/trips` → accepts `{ source, destination, departure_time }` and returns trip with temporary generated `id`
+11 automated tests passed; frontend build and lint passed. Browser checks
+confirmed both live previews and switching between color and motion modes.
+A generated video exercised the actual V4L2 → FFmpeg → EVM → JPEG path at
+approximately 30 FPS, with owned processes cleaned up after Stop. HTTP checks
+confirmed invalid-band rejection, missing-phone errors and MJPEG closing on Stop.
+The S24 was not connected during these checks; its camera capture remains to be
+verified on the actual device.
