@@ -1,13 +1,15 @@
 import asyncio
+import json
 from contextlib import asynccontextmanager
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 
 from .capture import Session, cameras, devices, loopbacks
+from . import video_jobs
 
 session = Session()
 
@@ -20,7 +22,7 @@ async def lifespan(app):
 
 app = FastAPI(title="Video Amplification", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-                   allow_methods=["GET", "POST", "PUT"], allow_headers=["Content-Type"])
+                   allow_methods=["GET", "POST", "PUT", "DELETE"], allow_headers=["Content-Type"])
 
 
 class Settings(BaseModel):
@@ -79,6 +81,61 @@ def start(values: Start):
 @app.post("/api/stop")
 def stop():
     return checked(session.stop)
+
+
+@app.post("/api/video-jobs")
+async def upload_video(request: Request):
+    filename = request.query_params.get("filename", "")
+    points_raw = request.query_params.get("points", "")
+    low_raw, high_raw = request.query_params.get("low", ""), request.query_params.get("high", "")
+    try:
+        points = json.loads(points_raw)
+        low, high = float(low_raw), float(high_raw)
+        job = video_jobs.create_job(filename, points, low, high)
+    except (ValueError, TypeError, json.JSONDecodeError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    job_id = job["id"]
+    folder = video_jobs.job_path(job_id) / "source"
+    folder.mkdir()
+    destination = folder / job["filename"]
+    written = 0
+    try:
+        with destination.open("wb") as output:
+            async for chunk in request.stream():
+                written += len(chunk)
+                if written > 2 * 1024 * 1024 * 1024:
+                    raise HTTPException(413, "Video exceeds the 2 GB upload limit")
+                output.write(chunk)
+        if written == 0:
+            raise HTTPException(400, "The selected video is empty")
+        video_jobs.set_uploaded(job_id)
+        video_jobs.start_job(job_id)
+    except BaseException:
+        try:
+            video_jobs.abort_upload(job_id)
+        except ValueError:
+            pass
+        raise
+    return video_jobs.status(job_id)
+
+
+@app.get("/api/video-jobs/{job_id}")
+def video_job_status(job_id: str):
+    return checked(video_jobs.status, job_id)
+
+
+@app.get("/api/video-jobs/{job_id}/files/{name}")
+def video_job_file(job_id: str, name: str):
+    path = checked(video_jobs.file_path, job_id, name)
+    return FileResponse(path, media_type="video/mp4", filename=name,
+                        content_disposition_type="inline")
+
+
+@app.delete("/api/video-jobs/{job_id}")
+def delete_video_job(job_id: str):
+    checked(video_jobs.delete_job, job_id)
+    return {"deleted": True}
 
 
 @app.get("/api/stream/{kind}")

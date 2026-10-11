@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import './App.css'
+import VideoWorkflow from './VideoWorkflow.jsx'
 
 async function api(path, method = 'GET', body) {
   const response = await fetch(`/api/${path}`, {
@@ -13,6 +14,7 @@ async function api(path, method = 'GET', body) {
 }
 
 export default function App() {
+  const [workspaceMode, setWorkspaceMode] = useState('video')
   const [status, setStatus] = useState({ state: 'idle', frames: 0, fps: 0, clipping: 0 })
   const [inventory, setInventory] = useState({ devices: [], loopbacks: [] })
   const [source, setSource] = useState('phone')
@@ -90,9 +92,11 @@ export default function App() {
     <main className="app-shell">
       <header>
         <div><p className="eyebrow">VIDEO MAGNIFICATION / LOCAL LAB</p><h1>Make the subtle visible.</h1></div>
-        <span className={`status ${status.state}`}><i />{status.state === 'running' ? 'Live' : status.state}</span>
+        <div className="workspace-switch"><button className={workspaceMode === 'video' ? 'selected' : ''} onClick={() => setWorkspaceMode('video')}>Process a video</button>
+          <button className={workspaceMode === 'camera' ? 'selected' : ''} onClick={() => setWorkspaceMode('camera')}>Live camera</button>
+          {workspaceMode === 'camera' && <span className={`status ${status.state}`}><i />{status.state === 'running' ? 'Live' : status.state}</span>}</div>
       </header>
-      <div className="workspace">
+      {workspaceMode === 'video' ? <VideoWorkflow /> : <div className="workspace">
         <aside className="controls">
           <section>
             <h2>Camera source</h2>
@@ -165,7 +169,7 @@ export default function App() {
           <p className="footnote">30 FPS capture target · local processing · frame-arrival timing · preview only, not a validated measurement</p>
           {!!status.logs?.length && <details className="capture-log"><summary>Capture log</summary><pre>{status.logs.join('\n')}</pre></details>}
         </div>
-      </div>
+      </div>}
     </main>
   )
 }

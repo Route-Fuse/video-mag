@@ -6,6 +6,9 @@ h2 { font-size: 14px; font-weight: 550; margin: 0 0 18px; }
 .status { border: 1px solid #343b48; border-radius: 24px; padding: 9px 15px; text-transform: capitalize; color: #a9b2c4; font-size: 12px; white-space: nowrap; }
 .status i { display: inline-block; width: 7px; height: 7px; background: #7b8496; border-radius: 50%; margin-right: 9px; }
 .status.running i { background: #9de8ba; box-shadow: 0 0 10px #9de8ba55; }
+.workspace-switch { display: flex; align-items: center; gap: 8px; }
+.workspace-switch button { border: 1px solid #343d4d; border-radius: 7px; background: #191e27; color: #aeb8ca; padding: 10px 13px; font-size: 12px; }
+.workspace-switch button.selected { border-color: #687da9; background: #263759; color: #e3ebff; }
 .workspace { display: grid; grid-template-columns: 285px minmax(0, 1fr); gap: 28px; }
 .controls { background: #191e27; border: 1px solid #2b323f; border-radius: 14px; padding: 23px; align-self: start; }
 .controls section + section { border-top: 1px solid #303747; margin-top: 26px; padding-top: 25px; }

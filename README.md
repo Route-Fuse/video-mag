@@ -1,10 +1,10 @@
 # Video Amplification
 
-Local Fedora KDE prototype: Galaxy S24 rear camera → scrcpy over USB/ADB →
-V4L2 loopback → FFmpeg → causal Eulerian video magnification → browser previews.
-Choose **Color amp** or **Motion amp**, adjust added gain and a temporal frequency
-band, and see original and amplified video side by side. A synthetic source
-provides independent 1.2 Hz color and subpixel motion examples without a phone.
+Local Fedora KDE prototype with two paths: **Process a video** uploads a local
+clip to the localhost app, lets you mark a wrist crop, stabilizes that crop, and
+compares FastDMM motion amplification at 5×, 10×, and 20×. **Live camera** uses
+Galaxy S24 rear camera → scrcpy over USB/ADB → V4L2 loopback → FFmpeg → causal
+Eulerian magnification. A synthetic source is available on the live camera path.
 
 ## Run
 
@@ -53,6 +53,29 @@ Processing uses 640×360 with aspect-preserving letterboxing. Startup failure,
 USB disconnection and decoder failure appear in the interface and capture log.
 Stop terminates only the scrcpy/FFmpeg children started by this app.
 
+## Process a local wrist video
+
+1. Select **Process a video**, then choose an MP4, MOV, MKV, AVI, or M4V file.
+2. On the video's first frame, click four points clockwise around the pulse
+   area. Drag points to refine the selection. Keep a little surrounding skin
+   texture inside the margin.
+3. Set the temporal band in Hz. The default is 0.7–3 Hz; the backend converts
+   it using the source video's measured FPS.
+4. Start processing. The backend uploads the file to local `.runtime/video-jobs`,
+   registers the crop to its first frame, then runs FastDMM at 5×, 10×, and 20×.
+5. Compare the stabilized original crop with the three amplified crops using
+   the shared Play/Pause and seek controls. Download each amplified result.
+
+Only the selected, margin-expanded rectangular crop is stabilized and sent to
+FastDMM. The rest of the original frame is excluded from stabilization and
+amplification and does not appear in the outputs.
+The original crop and each model result retain the input frame rate. Completed
+job files remain under `.runtime/video-jobs` until **Clear results** is used.
+After successful crop preparation, the uploaded full video copy is removed.
+FastDMM must be installed in `/home/vinnavan/user/models/video-mag`; override
+that location with `VIDEO_MAG_FASTMM_ROOT` and `VIDEO_MAG_FASTMM_PYTHON` when
+starting the backend if needed. This path uses FastDMM only; SAM is not used.
+
 ## Algorithms and limits
 
 - **Color:** Gaussian-pyramid reduction, causal second-order Butterworth
@@ -67,7 +90,7 @@ Stop terminates only the scrcpy/FFmpeg children started by this app.
   changes and arrival gaps over 250 ms. Allow several seconds to settle.
 - Frequency settings require `0 < low < high < 15 Hz` for the 30 FPS target.
 - The previews are JPEG/MJPEG representations of processed frames. No recording
-  export, ROI editor, physiological measurements or RAW capture is implemented.
+  export, live ROI editor, physiological measurements or RAW capture is implemented.
 - V4L2/FFmpeg ingestion currently uses local frame-arrival timing rather than
   preserved sensor timestamps. The filter assumes uniform 30 FPS. Low delivery
   rates, duplicated frames and camera processing can invalidate frequency
